@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Pick List PDF Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+    
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #0b132b 0%, #1c2541 100%); color: #ffffff; margin: 0; padding: 30px; display: flex; justify-content: center; align-items: center; min-height: 90vh; }
+        .card { background: #1c2541; border-radius: 12px; padding: 25px 30px; width: 100%; max-width: 550px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45); border: 1px solid #3a506b; text-align: center; }
+        
+        /* TOP LOGO STYLING */
+        .profile-logo-wrapper {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 15px auto;
+            border-radius: 50%;
+            overflow: hidden;
+            border: 3px solid #6fffe9;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .profile-logo-wrapper img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        h2 { color: #6fffe9; margin-top: 0; font-size: 22px; font-weight: 700; letter-spacing: 0.5px; }
+        p { color: #5bc0be; font-size: 13px; margin-bottom: 20px; }
+        
+        .form-group { margin-bottom: 15px; text-align: left; }
+        label { display: block; font-size: 12px; font-weight: bold; color: #cbd5e1; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
+        select, input[type="file"] { width: 100%; padding: 10px; background: #0b132b; border: 1px solid #3a506b; border-radius: 6px; color: #ffffff; font-size: 14px; box-sizing: border-box; }
+        select:focus { outline: none; border-color: #5bc0be; }
+        
+        .file-input-wrapper { text-align: center; margin-bottom: 15px; }
+        input[type="file"] { display: none; }
+        .custom-file-upload { display: inline-block; padding: 10px 20px; background: #3a506b; color: #ffffff; border-radius: 6px; cursor: pointer; border: 1px solid #5bc0be; font-weight: bold; transition: 0.2s; width: 100%; box-sizing: border-box; }
+        .custom-file-upload:hover { background: #5bc0be; color: #0b132b; }
+        
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        .btn-generate { flex: 1; padding: 12px; background: #3a506b; color: #6fffe9; border: 1px solid #6fffe9; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: 0.2s; }
+        .btn-generate:hover { background: #6fffe9; color: #0b132b; }
+        .btn-print { flex: 1; padding: 12px; background: #5bc0be; color: #0b132b; border: 1px solid #5bc0be; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; transition: 0.2s; }
+        .btn-print:hover { background: #3a506b; color: #ffffff; }
+        .btn-generate:disabled, .btn-print:disabled { background: #1c2541; color: #475569; border-color: #334155; cursor: not-allowed; }
+        #status { margin-top: 15px; font-size: 13px; font-weight: bold; text-align: center; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div class="profile-logo-wrapper">
+        <img src="logo.png" alt="App Logo">
+    </div>
+
+    <h2>📦 Advanced Pick List Generator</h2>
+    <p>Upload Excel, select filter & export/print bordered PDF.</p>
+    
+    <div class="file-input-wrapper">
+        <label for="excelFile" class="custom-file-upload" id="fileLabel">
+            📄 SELECT EXCEL FILE
+        </label>
+        <input type="file" id="excelFile" accept=".xlsx, .xls">
+    </div>
+
+    <div class="form-group">
+        <label for="picklistSelect">PICK LIST NO SELECT KAREIN:</label>
+        <select id="picklistSelect" disabled>
+            <option value="ALL">-- ALL PICK LISTS --</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="viewModeSelect">PICKING VIEW TYPE (PAGE BREAK MODE):</label>
+        <select id="viewModeSelect">
+            <option value="ITEM">ITEM Wise (Each Item on Separate Page)</option>
+            <option value="BARCODE">BARCODE Wise (Each Barcode on Separate Page)</option>
+            <option value="MIX">As Is / Mix (Continuous Single Document)</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label for="binSortSelect">BIN NO SORTING ORDER:</label>
+        <select id="binSortSelect">
+            <option value="ASC">BIN NO: Ascending (A ➔ Z)</option>
+            <option value="DESC" selected>BIN NO: Descending (Z ➔ A)</option>
+        </select>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-generate" id="generateBtn" disabled onclick="processExcelAndGeneratePDF('download')">📥 PDF Download</button>
+        <button class="btn-print" id="printBtn" disabled onclick="processExcelAndGeneratePDF('print')">🖨️ Direct Print</button>
+    </div>
+    <div id="status"></div>
+</div>
+
+<script>
+    let rawJsonData = [];
+
+    document.getElementById('excelFile').addEventListener('change', function(e) {
+        if (e.target.files.length > 0) {
+            let file = e.target.files[0];
+            document.getElementById('fileLabel').innerText = "✓ Excel: " + file.name;
+            
+            let reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    let data = new Uint8Array(evt.target.result);
+                    let workbook = XLSX.read(data, { type: 'array' });
+                    let worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                    rawJsonData = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+                    populatePicklistDropdown(rawJsonData);
+                    document.getElementById('picklistSelect').disabled = false;
+                    document.getElementById('generateBtn').disabled = false;
+                    document.getElementById('printBtn').disabled = false;
+                    document.getElementById('status').innerText = "";
+                } catch (err) {
+                    alert("Excel file read karne me error aaya.");
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+    });
+
+    function populatePicklistDropdown(data) {
+        let picklistSet = new Set();
+        data.forEach(row => {
+            let val = row["PICK LIST NO"] || row["PICK_LIST_NO"] || "";
+            if (val) picklistSet.add(String(val).trim());
+        });
+
+        let select = document.getElementById('picklistSelect');
+        select.innerHTML = '<option value="ALL">-- ALL PICK LISTS --</option>';
+        picklistSet.forEach(pl => {
+            let opt = document.createElement('option');
+            opt.value = pl;
+            opt.innerText = pl;
+            select.appendChild(opt);
+        });
+    }
+
+    function processExcelAndGeneratePDF(actionType = 'download') {
+        if (rawJsonData.length === 0) return;
+
+        let statusDiv = document.getElementById('status');
+        statusDiv.style.color = '#5bc0be';
+        statusDiv.innerText = actionType === 'print' ? "Preparing Print View..." : "PDF Generate Ho Raha Hai...";
+
+        setTimeout(() => {
+            try {
+                let selectedPL = document.getElementById('picklistSelect').value;
+                let viewMode = document.getElementById('viewModeSelect').value;
+                let binSort = document.getElementById('binSortSelect').value;
+
+                let filteredData = rawJsonData.filter(row => {
+                    if (selectedPL === "ALL") return true;
+                    let val = row["PICK LIST NO"] || row["PICK_LIST_NO"] || "";
+                    return String(val).trim() === selectedPL;
+                });
+
+                if (filteredData.length === 0) {
+                    statusDiv.style.color = '#ff6b6b';
+                    statusDiv.innerText = "Selected Pick List ka koi data nahi mila!";
+                    return;
+                }
+
+                const sortRows = (rows) => {
+                    return rows.sort((a, b) => {
+                        let binA = String(a.binNo).toUpperCase();
+                        let binB = String(b.binNo).toUpperCase();
+                        if (binSort === "ASC") {
+                            return binA.localeCompare(binB, undefined, { numeric: true, sensitivity: 'base' });
+                        } else {
+                            return binB.localeCompare(binA, undefined, { numeric: true, sensitivity: 'base' });
+                        }
+                    });
+                };
+
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF('p', 'mm', 'a4');
+
+                const tableConfig = {
+                    theme: 'grid',
+                    margin: { top: 25 },
+                    headStyles: { 
+                        fillColor: [11, 19, 43], 
+                        textColor: [255, 255, 255], 
+                        fontStyle: 'bold', 
+                        halign: 'center',
+                        lineWidth: 0.3,
+                        lineColor: [0, 0, 0]
+                    },
+                    bodyStyles: { 
+                        textColor: [0, 0, 0], 
+                        fontSize: 8, 
+                        cellPadding: 2.5, 
+                        halign: 'center',
+                        lineWidth: 0.3,
+                        lineColor: [0, 0, 0]
+                    },
+                    footStyles: {
+                        fillColor: [226, 232, 240],
+                        textColor: [0, 0, 0],
+                        fontStyle: 'bold',
+                        fontSize: 9,
+                        halign: 'center',
+                        lineWidth: 0.3,
+                        lineColor: [0, 0, 0]
+                    },
+                    columnStyles: {
+                        0: { cellWidth: 35, fontStyle: 'bold' },
+                        1: { cellWidth: 25 },
+                        2: { cellWidth: 25 },
+                        3: { cellWidth: 20 },
+                        4: { cellWidth: 30 },
+                        5: { cellWidth: 35, fontStyle: 'bold' },
+                        6: { cellWidth: 15, fontStyle: 'bold' }
+                    }
+                };
+
+                const renderCleanHeader = (mainTitle, subTitle) => {
+                    doc.setFontSize(13);
+                    doc.setFont("helvetica", "bold");
+                    doc.setTextColor(0, 0, 0);
+                    doc.text(mainTitle, 14, 12);
+
+                    doc.setFontSize(9);
+                    doc.setFont("helvetica", "normal");
+                    doc.setTextColor(60, 60, 60);
+                    doc.text(subTitle, 14, 17);
+                };
+
+                if (viewMode === "ITEM" || viewMode === "BARCODE") {
+                    let groups = new Map();
+                    filteredData.forEach(row => {
+                        let itemKey = (viewMode === "ITEM") ? (row["ITEM"] || "UNKNOWN_ITEM") : (row["BARCODE"] || "UNKNOWN_BARCODE");
+                        if (!groups.has(itemKey)) {
+                            groups.set(itemKey, []);
+                        }
+                        groups.get(itemKey).push({
+                            pickListNo: row["PICK LIST NO"] || row["PICK_LIST_NO"] || "",
+                            department: row["DEPARTMENT"] || "",
+                            item: row["ITEM"] || "",
+                            color: row["COLOR"] || "",
+                            barcode: row["BARCODE"] || "",
+                            binNo: row["BIN NO"] || row["BIN_NO"] || "",
+                            qty: parseFloat(row["PICK LIST QTY."] || row["PICK LIST QTY"] || row["QTY"] || 0)
+                        });
+                    });
+
+                    let groupKeys = Array.from(groups.keys());
+
+                    groupKeys.forEach((key, index) => {
+                        if (index > 0) doc.addPage();
+
+                        let itemRows = sortRows(groups.get(key));
+                        let groupTotalQty = itemRows.reduce((sum, r) => sum + r.qty, 0);
+
+                        renderCleanHeader(`PICK LIST REPORT (${selectedPL})`, `${viewMode}: ${key} | Sort: BIN NO ${binSort}`);
+
+                        let tableBody = itemRows.map(r => [
+                            r.pickListNo,
+                            r.department,
+                            r.item,
+                            r.color,
+                            r.barcode,
+                            r.binNo,
+                            r.qty
+                        ]);
+
+                        let tableFoot = [
+                            ['TOTAL SUMMARY', '', '', '', `Lines: ${itemRows.length}`, 'TOTAL QTY:', groupTotalQty]
+                        ];
+
+                        doc.autoTable({
+                            startY: 22,
+                            head: [['PICK LIST NO', 'DEPARTMENT', 'ITEM', 'COLOR', 'BARCODE', 'BIN NO', 'QTY']],
+                            body: tableBody,
+                            foot: tableFoot,
+                            ...tableConfig,
+                            didDrawPage: function() {
+                                renderCleanHeader(`PICK LIST REPORT (${selectedPL})`, `${viewMode}: ${key} | Sort: BIN NO ${binSort}`);
+                            }
+                        });
+                    });
+
+                } else {
+                    let processedRows = filteredData.map(row => ({
+                        pickListNo: row["PICK LIST NO"] || row["PICK_LIST_NO"] || "",
+                        department: row["DEPARTMENT"] || "",
+                        item: row["ITEM"] || "",
+                        color: row["COLOR"] || "",
+                        barcode: row["BARCODE"] || "",
+                        binNo: row["BIN NO"] || row["BIN_NO"] || "",
+                        qty: parseFloat(row["PICK LIST QTY."] || row["PICK LIST QTY"] || row["QTY"] || 0)
+                    }));
+
+                    processedRows = sortRows(processedRows);
+                    let grandTotalQty = processedRows.reduce((sum, r) => sum + r.qty, 0);
+
+                    renderCleanHeader(`PICK LIST REPORT (${selectedPL})`, `Mode: As Is / Mix | Sort: BIN NO ${binSort}`);
+
+                    let tableBody = processedRows.map(r => [
+                        r.pickListNo,
+                        r.department,
+                        r.item,
+                        r.color,
+                        r.barcode,
+                        r.binNo,
+                        r.qty
+                    ]);
+
+                    let tableFoot = [
+                        ['TOTAL SUMMARY', '', '', '', `Total Items: ${processedRows.length}`, 'TOTAL QTY:', grandTotalQty]
+                    ];
+
+                    doc.autoTable({
+                        startY: 22,
+                        head: [['PICK LIST NO', 'DEPARTMENT', 'ITEM', 'COLOR', 'BARCODE', 'BIN NO', 'QTY']],
+                        body: tableBody,
+                        foot: tableFoot,
+                        ...tableConfig,
+                        didDrawPage: function() {
+                            renderCleanHeader(`PICK LIST REPORT (${selectedPL})`, `Mode: As Is / Mix | Sort: BIN NO ${binSort}`);
+                        }
+                    });
+                }
+
+                if (actionType === 'print') {
+                    doc.autoPrint();
+                    window.open(doc.output('bloburl'), '_blank');
+                    statusDiv.style.color = '#6fffe9';
+                    statusDiv.innerText = "✓ Print Window Opened!";
+                } else {
+                    doc.save(`PickList_${selectedPL}_${viewMode}_${Date.now()}.pdf`);
+                    statusDiv.style.color = '#6fffe9';
+                    statusDiv.innerText = "✓ PDF Downloaded!";
+                }
+
+            } catch (err) {
+                console.error(err);
+                statusDiv.style.color = '#ff6b6b';
+                statusDiv.innerText = "Error: PDF process nahi ho paayi.";
+            }
+        }, 100);
+    }
+</script>
+
+</body>
+</html>
